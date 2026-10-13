@@ -23,7 +23,7 @@ function showView(id) {
   document.querySelectorAll(".nav-item").forEach(b => b.classList.toggle("active", b.dataset.target === id));
   if (id === "results") setTimeout(drawCharts, 60);
 }
-document.querySelectorAll(".nav-item").forEach(b => b.addEventListener("click", () => showView(b.dataset.target)));
+document.querySelectorAll(".nav-item[data-target]").forEach(b => b.addEventListener("click", () => showView(b.dataset.target)));
 document.querySelectorAll("[data-goto]").forEach(b => b.addEventListener("click", () => showView(b.dataset.goto)));
 $("dismissNotice").addEventListener("click", () => $("dataNotice").remove());
 
