@@ -94,3 +94,18 @@ où `rho` est la masse volumique de l'air en kg/m³, `v` la vitesse relative air
 ## Technologies
 
 HTML, CSS, JavaScript ES modules, Three.js et Plotly.js.
+
+
+## Moteur CFD local Windows (pont expérimental)
+
+Le site GitHub Pages ne peut pas installer de logiciel ni exécuter un solveur sur le PC. Le dossier `local-engine/` contient un petit service local qui permet de vérifier le lien navigateur ↔ PC et de recevoir un modèle STL/OBJ. Il écoute uniquement sur `127.0.0.1`, utilise un code d'accès et ne doit pas être exposé sur Internet.
+
+### Installation du pont
+
+1. Installer Python 3.11 ou plus récent.
+2. Ouvrir PowerShell dans `local-engine`.
+3. Exécuter `py -m venv .venv`, puis `.venv\\Scripts\\python -m pip install -r requirements.txt`.
+4. Lancer `start-windows.bat`. Copier le code d'accès affiché dans la console.
+5. Dans AeroLab CFD → Configuration CFD, saisir le code puis cliquer sur **Tester la connexion**.
+
+Le pont fournit un état de santé, vérifie la présence d'OpenFOAM via WSL et reçoit des fichiers dans le dossier local `jobs`. **La réception d'un fichier n'est pas une simulation** : ce pont ne prétend pas encore générer un maillage valide ou calculer un Cd. La génération de cas OpenFOAM complète dépend de la version installée, de la qualité de la géométrie et du choix de maillage. Le format STEP/IGES n'est pas accepté par le pont : convertir d'abord en STL avec FreeCAD.
