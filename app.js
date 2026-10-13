@@ -257,7 +257,7 @@ async function pollCloud(id){
  try{const r=await fetch(cloudUrl()+"/api/jobs/"+encodeURIComponent(id),{cache:"no-store"}),d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.detail||("HTTP "+r.status));
  const p=Math.max(0,Math.min(100,Number(d.progress)||0)),bar=$("cloudProgress");if(bar){bar.hidden=false;bar.value=p;}
  const dl=$("cloudDownload");if(dl){dl.hidden=d.status!=="completed";dl.onclick=()=>cloudDownload(id);}
- const log=$("cloudLog");if(log){log.hidden=!["failed","running","meshing","preparing"].includes(d.status);log.onclick=()=>cloudLog(id);}
+ const logBtn=$("cloudLog");if(logBtn){logBtn.hidden=!["failed","running","meshing","preparing"].includes(d.status);logBtn.onclick=()=>cloudLog(id);}
  cloudMessage((d.message||d.status)+" — "+p+"%"+(d.status==="completed"?" · Calcul terminé côté serveur. Vérifie la convergence avant toute conclusion.":""));
  if(d.status==="completed"||d.status==="failed")return;cloudPollHandle=setTimeout(()=>pollCloud(id),3000);
  }catch(e){cloudMessage("Suivi interrompu : "+e.message+". Vérifie que le service cloud est accessible.");}
