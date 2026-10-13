@@ -20,7 +20,7 @@ def run(job_id,speed):
  if min(ext)<=1e-7: raise RuntimeError("Le modèle possède une dimension nulle.")
  axes=sorted(range(3),key=lambda i:ext[i],reverse=True)
  if axes != [0,1,2]:
-  m=trimesh.transformations.identity_matrix(); m[:3,:3]=m[:3,:3][:,axes]; mesh.apply_transform(m)
+  m=trimesh.transformations.identity_matrix(); m[:3,:3]=m[:3,:3][:,axes].copy(); mesh.apply_transform(m)
  mesh.apply_scale(4.5/float(max(mesh.extents))); b=mesh.bounds
  mesh.apply_translation([-(b[0][0]+b[1][0])/2,-(b[0][1]+b[1][1])/2,.25-b[0][2]])
  b=mesh.bounds; L=max(float(b[1][0]-b[0][0]),4.5); W=max(float(b[1][1]-b[0][1]),1.0); H=max(float(b[1][2]-b[0][2]),.5)
