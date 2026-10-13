@@ -245,4 +245,16 @@ $("engineSubmit")?.addEventListener("click",async()=>{
   }catch(err){engineMessage("Envoi impossible : "+err.message+". Le service peut être arrêté ou le solveur non configuré.");}
 });
 
+
+const TUTORIAL_SEEN_KEY = "aerolab-cfd-tutorial-seen-v1";
+function showTutorial(){const overlay=$("tutorialOverlay");if(overlay){overlay.hidden=false;document.body.classList.add("tutorial-open");$("tutorialClose")?.focus();}}
+function hideTutorial(){const overlay=$("tutorialOverlay");if(overlay)overlay.hidden=true;document.body.classList.remove("tutorial-open");if($("tutorialDontShow")?.checked){try{localStorage.setItem(TUTORIAL_SEEN_KEY,"1");}catch{}}}
+$("openTutorial")?.addEventListener("click",showTutorial);
+$("tutorialClose")?.addEventListener("click",hideTutorial);
+$("tutorialLater")?.addEventListener("click",hideTutorial);
+$("tutorialStart")?.addEventListener("click",hideTutorial);
+$("tutorialOverlay")?.addEventListener("click",event=>{if(event.target===$("tutorialOverlay"))hideTutorial();});
+document.addEventListener("keydown",event=>{if(event.key==="Escape"&&$("tutorialOverlay")&&!$("tutorialOverlay").hidden)hideTutorial();});
+try{if(localStorage.getItem(TUTORIAL_SEEN_KEY)!=="1")showTutorial();}catch{showTutorial();}
+
 initViewer();renderData();updateBoundaryPreview();
