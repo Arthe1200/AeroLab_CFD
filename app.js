@@ -210,4 +210,39 @@ $("exportReport").addEventListener("click",()=>{
 });
 function csvEscape(v){const s=String(v);return /[",;\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;}
 function downloadText(name,text){const blob=new Blob(["\\uFEFF",text],{type:"text/csv;charset=utf-8;"}),a=document.createElement("a"),url=URL.createObjectURL(blob);a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+
+const engineDefaults = { url: "http://127.0.0.1:8765" };
+function engineUrl(){ return ($("engineUrl")?.value || engineDefaults.url).trim().replace(/\/$/, ""); }
+function engineHeaders(){ const token=$("engineToken")?.value.trim(); return token ? {"Authorization": "Bearer "+token} : {}; }
+function engineMessage(message, good=false){ const el=$("engineStatus"); if(el) el.textContent=message; const badge=$("engineBadge"); if(badge){badge.textContent=good?"Connecté":"À vérifier";badge.className="pill "+(good?"green":"amber");} }
+async function checkLocalEngine(){
+  const url=engineUrl();
+  try{
+    const response=await fetch(url+"/api/health",{headers:engineHeaders(),cache:"no-store"});
+    const data=await response.json().catch(()=>({}));
+    if(!response.ok) throw new Error(data.detail||("HTTP "+response.status));
+    engineMessage("Service Windows joignable. "+(data.openfoam_available?"OpenFOAM détecté.":"OpenFOAM non détecté.")+" "+(data.message||""),true);
+    return data;
+  }catch(err){
+    engineMessage("Connexion impossible : "+err.message+". Vérifie que le service tourne, que l'adresse est correcte et que le code d'accès est valide.");
+    return null;
+  }
+}
+$("engineCheck")?.addEventListener("click",checkLocalEngine);
+$("engineSubmit")?.addEventListener("click",async()=>{
+  const file=$("engineGeometry")?.files?.[0];
+  const speed=Number($("engineSpeed")?.value);
+  if(!file){engineMessage("Choisis d'abord un fichier STL ou OBJ.");return;}
+  if(!Number.isFinite(speed)||speed<=0||speed>300){engineMessage("La vitesse doit être comprise entre 0 et 300 km/h.");return;}
+  if(!/\.(stl|obj)$/i.test(file.name)){engineMessage("Format non pris en charge pour l'instant : utilise un fichier STL ou OBJ.");return;}
+  const form=new FormData();form.append("geometry",file);form.append("speed_kmh",String(speed));
+  engineMessage("Envoi du modèle au service local…");
+  try{
+    const response=await fetch(engineUrl()+"/api/jobs",{method:"POST",headers:engineHeaders(),body:form});
+    const data=await response.json().catch(()=>({}));
+    if(!response.ok) throw new Error(data.detail||("HTTP "+response.status));
+    engineMessage(data.message||"Modèle reçu par le service local.",true);
+  }catch(err){engineMessage("Envoi impossible : "+err.message+". Le service peut être arrêté ou le solveur non configuré.");}
+});
+
 initViewer();renderData();updateBoundaryPreview();
