@@ -109,3 +109,10 @@ Le site GitHub Pages ne peut pas installer de logiciel ni exécuter un solveur s
 5. Dans AeroLab CFD → Configuration CFD, saisir le code puis cliquer sur **Tester la connexion**.
 
 Le pont fournit un état de santé, vérifie la présence d'OpenFOAM via WSL et reçoit des fichiers dans le dossier local `jobs`. **La réception d'un fichier n'est pas une simulation** : ce pont ne prétend pas encore générer un maillage valide ou calculer un Cd. La génération de cas OpenFOAM complète dépend de la version installée, de la qualité de la géométrie et du choix de maillage. Le format STEP/IGES n'est pas accepté par le pont : convertir d'abord en STL avec FreeCAD.
+
+
+## Simulation automatique (prototype)
+
+Le moteur local tente de créer un cas OpenFOAM à partir d'un fichier STL/OBJ, puis lance blockMesh, snappyHexMesh, checkMesh et simpleFoam. Il tente ensuite d'exporter les champs en VTK ASCII. Il faut une distribution WSL où les commandes OpenFOAM sont accessibles après chargement de son fichier bashrc. Le démarrage installe aussi trimesh pour lire et normaliser la géométrie.
+
+Le modèle est mis à l'échelle avec sa plus grande dimension fixée à 4,5 m et l'axe le plus long est interprété comme axe longitudinal X. Ce sont des hypothèses automatiques, pas une validation du modèle. Le maillage initial est grossier et sans couches limites : les résultats ne sont pas validés pour la conception automobile. Les fichiers VTK exportés peuvent être explorés dans ParaView. La visualisation interactive des streamlines directement dans la page reste à développer.
