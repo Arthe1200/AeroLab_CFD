@@ -38,3 +38,9 @@
 .tutorial-remember{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:12px}
 .tutorial-actions>div{display:flex;gap:8px;flex-wrap:wrap}
 @media(max-width:600px){.tutorial-overlay{padding:8px}.tutorial-modal{max-height:calc(100vh - 16px);padding:17px;border-radius:15px}.tutorial-step{grid-template-columns:30px 1fr;padding:11px}.tutorial-actions{align-items:flex-start;flex-direction:column}.tutorial-actions>div{width:100%}.tutorial-actions .button{flex:1}}
+
+/* Aperçu aérodynamique pédagogique, distinct d'un résultat CFD */
+.flow-preview-tools{position:absolute;right:12px;top:48px;z-index:4;display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.flow-preview-tools .button{font-size:11px;padding:7px 10px}
+#cloudStatus{white-space:pre-wrap;overflow-wrap:anywhere}
+#cloudProgress{accent-color:var(--blue)}
