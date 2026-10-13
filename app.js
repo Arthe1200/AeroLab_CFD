@@ -141,7 +141,67 @@ $("calcDrag").addEventListener("click",()=>{
   if(!(v>0&&rho>0&&A>0)){$("calcResult").textContent="Vérifiez les valeurs de vitesse, densité et surface.";return;}
   const F=.5*rho*v*v*cdRow.cd*A; $("calcResult").textContent=`Force estimée = ${F.toFixed(2)} N, à ${$("speed").value} km/h, avec Cd=${cdRow.cd}. Calcul théorique, non mesure expérimentale.`;
 });
-$("saveSetup").addEventListener("click",()=>{$("setupSummary").textContent=`${$("setupSpeed").value} km/h · ${$("temperature").value} °C · ${$("turbulence").value} · ${$("solverType").value}. Paramètres de référence seulement : aucun solveur n'a été lancé.`;});
+
+function getBoundaryConfig() {
+  const speedKmh = Number($("bcSpeed").value);
+  const axis = $("bcAxis").value;
+  const sign = Number($("bcSign").value);
+  const names = {inlet:$("bcInlet").value.trim(),outlet:$("bcOutlet").value.trim(),car:$("bcCar").value.trim(),ground:$("bcGround").value.trim(),sides:$("bcSides").value.trim()};
+  const errors = [];
+  if (!Number.isFinite(speedKmh) || speedKmh <= 0 || speedKmh > 500) errors.push("La vitesse doit être comprise entre 0 et 500 km/h, sans être nulle.");
+  for (const [role,name] of Object.entries(names)) {
+    if (!name) errors.push("Le nom du patch « "+role+" » est vide.");
+    else if (!/^[A-Za-z0-9_][A-Za-z0-9_.-]*$/.test(name)) errors.push("Nom de patch invalide : « "+name+" ».");
+  }
+  const entries=Object.entries(names);
+  for(let i=0;i<entries.length;i++) for(let j=i+1;j<entries.length;j++) if(entries[i][1] && entries[i][1]===entries[j][1]) errors.push("Le patch « "+entries[i][1]+" » est assigné plusieurs fois.");
+  const velocity=[0,0,0], idx=({x:0,y:1,z:2})[axis] ?? 0;
+  velocity[idx]=sign*speedKmh/3.6;
+  return {speedKmh,axis,sign,velocity,names,movingGround:$("bcMovingGround").value==="yes",errors};
+}
+function foamVector(v){return "("+v.map(n=>(Math.abs(n)<1e-10?0:n).toFixed(6)).join(" ")+")";}
+function buildOpenFoamFiles(cfg){
+  const U = "FoamFile\n{\n    version     2.0;\n    format      ascii;\n    class       volVectorField;\n    object      U;\n}\n\ndimensions      [0 1 -1 0 0 0 0];\ninternalField   uniform (0 0 0);\n\nboundaryField\n{\n"+
+    "    "+cfg.names.inlet+"\n    {\n        type            fixedValue;\n        value           uniform "+foamVector(cfg.velocity)+";\n    }\n"+
+    "    "+cfg.names.outlet+"\n    {\n        type            pressureInletOutletVelocity;\n        value           uniform "+foamVector(cfg.velocity)+";\n    }\n"+
+    "    "+cfg.names.car+"\n    {\n        type            fixedValue;\n        value           uniform (0 0 0);\n    }\n"+
+    "    "+cfg.names.ground+"\n    {\n        type            fixedValue;\n        value           uniform "+foamVector(cfg.movingGround?cfg.velocity:[0,0,0])+";\n    }\n"+
+    "    "+cfg.names.sides+"\n    {\n        type            slip;\n    }\n}\n";
+  const p = "FoamFile\n{\n    version     2.0;\n    format      ascii;\n    class       volScalarField;\n    object      p;\n}\n\ndimensions      [0 2 -2 0 0 0 0];\ninternalField   uniform 0;\n\nboundaryField\n{\n"+
+    "    "+cfg.names.inlet+"\n    {\n        type            zeroGradient;\n    }\n"+
+    "    "+cfg.names.outlet+"\n    {\n        type            fixedValue;\n        value           uniform 0;\n    }\n"+
+    "    "+cfg.names.car+"\n    {\n        type            zeroGradient;\n    }\n"+
+    "    "+cfg.names.ground+"\n    {\n        type            zeroGradient;\n    }\n"+
+    "    "+cfg.names.sides+"\n    {\n        type            zeroGradient;\n    }\n}\n";
+  return {U,p};
+}
+function updateBoundaryPreview(){
+  const cfg=getBoundaryConfig(),status=$("bcValidation"),preview=$("bcPreview");
+  if(cfg.errors.length){status.textContent="À corriger : "+cfg.errors.join(" ");status.style.borderColor="#81424a";preview.innerHTML="<strong>Configuration non valide</strong><p>Corrige les champs signalés avant de générer les fichiers.</p>";$("generateBC").disabled=true;return;}
+  $("generateBC").disabled=false;status.style.borderColor="#205146";
+  status.textContent="Configuration valide · U entrée = "+foamVector(cfg.velocity)+" m/s · sortie p = 0 Pa relatif · "+(cfg.movingGround?"sol mobile synchronisé":"sol fixe")+".";
+  preview.innerHTML="<strong>Conditions générées automatiquement</strong><p>Entrée : fixedValue "+foamVector(cfg.velocity)+" m/s · Sortie : pression relative 0 Pa · Carrosserie : paroi fixe · Sol : "+(cfg.movingGround?"vitesse "+foamVector(cfg.velocity):"fixe")+" · Haut/côtés : slip. Vérifie les patches dans constant/polyMesh/boundary.</p><div class=\"button-row\"><button class=\"button button-secondary\" id=\"downloadU\">Télécharger 0/U</button><button class=\"button button-secondary\" id=\"downloadP\">Télécharger 0/p</button></div>";
+  $("downloadU").addEventListener("click",()=>downloadText("U",buildOpenFoamFiles(getBoundaryConfig()).U));
+  $("downloadP").addEventListener("click",()=>downloadText("p",buildOpenFoamFiles(getBoundaryConfig()).p));
+}
+["bcSpeed","bcAxis","bcSign","bcMovingGround","bcInlet","bcOutlet","bcCar","bcGround","bcSides"].forEach(id=>$(id).addEventListener("input",updateBoundaryPreview));
+$("generateBC").addEventListener("click",()=>{
+  const cfg=getBoundaryConfig();if(cfg.errors.length){updateBoundaryPreview();return;}
+  updateBoundaryPreview();const files=buildOpenFoamFiles(cfg);
+  downloadText("U",files.U);setTimeout(()=>downloadText("p",files.p),250);
+});
+$("downloadBCSummary").addEventListener("click",()=>{
+  const cfg=getBoundaryConfig();if(cfg.errors.length){updateBoundaryPreview();return;}
+  const data={tool:"AeroLab CFD boundary-condition generator",solverTarget:"OpenFOAM",note:"Template only. Confirm patch names and solver compatibility against the actual mesh and selected solver.",speed_kmh:cfg.speedKmh,velocity_m_s:cfg.velocity,pressureOutlet:{value:0,reference:"gauge pressure / relative pressure"},movingGround:cfg.movingGround,patches:cfg.names,turbulenceModel:$("turbulence").value,solverType:$("solverType").value,temperature_C:Number($("temperature").value)};
+  downloadText("aerolab-boundary-conditions.json",JSON.stringify(data,null,2));
+});
+$("bcSpeed").addEventListener("input",()=>{$("setupSpeed").value=$("bcSpeed").value;$("speed").value=$("bcSpeed").value;});
+$("setupSpeed").addEventListener("input",()=>{$("bcSpeed").value=$("setupSpeed").value;$("speed").value=$("setupSpeed").value;updateBoundaryPreview();});
+$("saveSetup").addEventListener("click",()=>{
+  $("setupSummary").textContent=$("setupSpeed").value+" km/h · "+$("temperature").value+" °C · "+$("turbulence").value+" · "+$("solverType").value+". Fichiers U/p générés séparément ; maillage, pression de référence et champs de turbulence restent à vérifier.";
+  updateBoundaryPreview();
+});
+
 $("downloadTemplate").addEventListener("click",()=>{const csv="variant,Cd,drag_N,lift_N,speed_kmh,source,status\nVersion A,0.31,125.4,-12,100,EXEMPLE_FICTIF,DEMO\nVersion B,0.28,113.3,-8,100,EXEMPLE_FICTIF,DEMO\n";downloadText("aerolab-modele-resultats.csv",csv);});
 $("exportReport").addEventListener("click",()=>{
   const headers=["variant","Cd","drag_N","lift_N","speed_kmh","source","status"];
@@ -150,4 +210,4 @@ $("exportReport").addEventListener("click",()=>{
 });
 function csvEscape(v){const s=String(v);return /[",;\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;}
 function downloadText(name,text){const blob=new Blob(["\\uFEFF",text],{type:"text/csv;charset=utf-8;"}),a=document.createElement("a"),url=URL.createObjectURL(blob);a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
-initViewer();renderData();
+initViewer();renderData();updateBoundaryPreview();
