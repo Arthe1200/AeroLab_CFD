@@ -4,7 +4,7 @@ import { STLLoader } from "three/addons/loaders/STLLoader.js";
 import { OBJLoader } from "three/addons/loaders/OBJLoader.js";
 
 const $ = (id) => document.getElementById(id);
-const state = { rows: [], modelName: "", scene: null, camera: null, renderer: null, controls: null, model: null };
+const state = { rows: [], modelName: "", scene: null, camera: null, renderer: null, controls: null, model: null, flowGroup:null, flowParticles:[], flowVisible:true, flowClock:0 };
 const STORAGE_KEY = "aerolab-cfd-results-v1";
 function saveRowsLocally() {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state.rows)); }
@@ -44,19 +44,41 @@ function initViewer() {
   state.scene = scene; state.camera = camera; state.renderer = renderer; state.controls = controls;
   const resize = () => { const w=host.clientWidth||400, h=host.clientHeight||300; camera.aspect=w/h; camera.updateProjectionMatrix(); renderer.setSize(w,h); };
   window.addEventListener("resize", resize);
-  const animate = () => { requestAnimationFrame(animate); controls.update(); renderer.render(scene,camera); };
+  const clock=new THREE.Clock(); const animate = () => { requestAnimationFrame(animate); const dt=Math.min(clock.getDelta(),.05); state.flowClock=(state.flowClock+dt*.22)%1; if(state.flowGroup){state.flowGroup.visible=state.flowVisible; for(const p of state.flowParticles){p.dot.position.copy(p.curve.getPointAt((state.flowClock+p.phase)%1));}} controls.update(); renderer.render(scene,camera); };
   animate();
 }
+function clearFlowPreview(){
+ if(state.flowGroup&&state.scene)state.scene.remove(state.flowGroup);
+ if(state.flowGroup)state.flowGroup.traverse(o=>{o.geometry?.dispose?.();if(o.material){if(Array.isArray(o.material))o.material.forEach(m=>m.dispose());else o.material.dispose();}});
+ state.flowGroup=null;state.flowParticles=[];
+}
+function buildFlowPreview(object){
+ clearFlowPreview();
+ const box=new THREE.Box3().setFromObject(object),size=box.getSize(new THREE.Vector3()),center=box.getCenter(new THREE.Vector3());
+ const dims=[size.x,size.y,size.z],axis=dims[0]>=dims[1]&&dims[0]>=dims[2]?0:(dims[1]>=dims[2]?1:2),perp=[0,1,2].filter(i=>i!==axis),length=dims[axis]||1;
+ const group=new THREE.Group(),particles=[],colors=[0x55d7ff,0x67b8ff,0x9b8cff,0xffc56d];
+ const offsetsA=[-.85,-.55,-.25,.25,.55,.85],offsetsB=[-.7,-.25,.25,.7];let idx=0;
+ for(const b of offsetsB)for(const a of offsetsA){
+  const pts=[];
+  for(let j=0;j<=40;j++){
+   const t=j/40,aa=a+(Math.abs(a)<.4?(a>=0?1:-1)*.58*Math.exp(-Math.pow((t-.5)/.19,2)):0),bb=b+(Math.abs(b)<.3?(b>=0?1:-1)*.7*Math.exp(-Math.pow((t-.5)/.19,2)):0);
+   const v=center.clone();v.setComponent(axis,box.min.getComponent(axis)-length*.6+t*length*2.2);v.setComponent(perp[0],center.getComponent(perp[0])+aa*(dims[perp[0]]*.5+.4));v.setComponent(perp[1],center.getComponent(perp[1])+bb*(dims[perp[1]]*.5+.4));pts.push(v);
+  }
+  const curve=new THREE.CatmullRomCurve3(pts),line=new THREE.Line(new THREE.BufferGeometry().setFromPoints(curve.getPoints(80)),new THREE.LineBasicMaterial({color:colors[idx%colors.length],transparent:true,opacity:.62}));
+  group.add(line);const dot=new THREE.Mesh(new THREE.SphereGeometry(.035,8,6),new THREE.MeshBasicMaterial({color:colors[idx%colors.length]}));group.add(dot);particles.push({curve,dot,phase:(idx/24)%1});idx++;
+ }
+ state.scene.add(group);state.flowGroup=group;state.flowParticles=particles;state.flowVisible=true;
+ if($("flowBadge"))$("flowBadge").textContent="FLUX APPROXIMATIF";
+ if($("flowToggle"))$("flowToggle").textContent="Masquer l’air";
+}
 function fitModel(object) {
-  if (state.model) state.scene.remove(state.model);
-  state.model = object;
-  const box = new THREE.Box3().setFromObject(object), size = box.getSize(new THREE.Vector3()), center = box.getCenter(new THREE.Vector3());
-  object.position.sub(center);
-  const maxDim = Math.max(size.x, size.y, size.z) || 1;
-  object.scale.setScalar(4 / maxDim);
-  state.scene.add(object);
-  state.camera.position.set(5, 3, 5); state.controls.target.set(0,0,0); state.controls.update();
-  $("viewerHelp").classList.add("hidden"); $("modelState").textContent = "Modèle chargé";
+ if(state.model)state.scene.remove(state.model);
+ state.model=object;
+ const box=new THREE.Box3().setFromObject(object),size=box.getSize(new THREE.Vector3()),center=box.getCenter(new THREE.Vector3());
+ object.position.sub(center);const maxDim=Math.max(size.x,size.y,size.z)||1;object.scale.setScalar(4/maxDim);
+ state.scene.add(object);buildFlowPreview(object);
+ state.camera.position.set(5,3,5);state.controls.target.set(0,0,0);state.controls.update();
+ $("viewerHelp").classList.add("hidden");$("modelState").textContent="Modèle chargé · flux approximatif";$("modelState").className="pill amber";
 }
 function loadModelFile(file) {
   if (!file) return;
@@ -85,6 +107,7 @@ function loadModelFile(file) {
   } else alert("Format non pris en charge pour l'aperçu. Utilisez STL ou OBJ.");
 }
 $("modelInput").addEventListener("change", e => loadModelFile(e.target.files[0]));
+$("flowToggle")?.addEventListener("click",()=>{state.flowVisible=!state.flowVisible;if(state.flowGroup)state.flowGroup.visible=state.flowVisible;$("flowToggle").textContent=state.flowVisible?"Masquer l’air":"Afficher l’air";});
 const dropZone = $("dropZone");
 ["dragenter","dragover"].forEach(ev => dropZone.addEventListener(ev, e => {e.preventDefault();dropZone.classList.add("dragging");}));
 ["dragleave","drop"].forEach(ev => dropZone.addEventListener(ev, e => {e.preventDefault();dropZone.classList.remove("dragging");}));
@@ -212,71 +235,44 @@ function csvEscape(v){const s=String(v);return /[",;\n]/.test(s)?'"'+s.replace(/
 function downloadText(name,text){const blob=new Blob(["\\uFEFF",text],{type:"text/csv;charset=utf-8;"}),a=document.createElement("a"),url=URL.createObjectURL(blob);a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 
 const engineDefaults = { url: "http://127.0.0.1:8765" };
-function engineUrl(){ return ($("engineUrl")?.value.trim() || "http://127.0.0.1:8765").replace(/\/+$/,""); }
-function engineHeaders(){ const token=$("engineToken")?.value.trim(); return token ? {"Authorization":"Bearer "+token} : {}; }
-function engineMessage(message, good=false){ const el=$("engineStatus"); if(el) el.textContent=message; const badge=$("engineBadge"); if(badge){badge.textContent=good?"Connecté":"À vérifier";badge.className="pill "+(good?"green":"amber");} }
-let activeEngineJob = null;
-let enginePollHandle = null;
-function stopEnginePolling(){if(enginePollHandle){clearTimeout(enginePollHandle);enginePollHandle=null;}}
-async function checkLocalEngine(){
-  try{
-    const response=await fetch(engineUrl()+"/api/health",{headers:engineHeaders(),cache:"no-store"});
-    const data=await response.json().catch(()=>({}));
-    if(!response.ok) throw new Error(data.detail||("HTTP "+response.status));
-    const foam=data.openfoam||{};
-    engineMessage(data.openfoam_available?"Moteur prêt. "+(foam.message||"OpenFOAM détecté."):"Service connecté, mais solveur indisponible : "+(foam.message||data.message||"OpenFOAM absent."),!!data.openfoam_available);
-    return data;
-  }catch(err){engineMessage("Connexion impossible : "+err.message+". Démarre start-windows.bat et vérifie le code d'accès.");return null;}
+function cloudUrl(){return ($("cloudUrl")?.value.trim()||"").replace(/\/+$/,"");}
+function cloudMessage(message,good=false){const el=$("cloudStatus");if(el)el.textContent=message;const badge=$("cloudBadge");if(badge){badge.textContent=good?"Service disponible":(cloudUrl()?"À vérifier":"Non configuré");badge.className="pill "+(good?"green":"amber");}}
+let cloudPollHandle=null;
+async function checkCloud(){
+ const base=cloudUrl();if(!base){cloudMessage("Aucune URL configurée. Il faut d'abord déployer un moteur CFD cloud compatible ; le site statique ne peut pas effectuer seul une vraie CFD.");return null;}
+ try{const r=await fetch(base+"/api/health",{cache:"no-store"}),d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.detail||("HTTP "+r.status));cloudMessage(d.message||"Service cloud accessible. Vérifie qu'il exécute réellement OpenFOAM.",true);return d;}
+ catch(e){cloudMessage("Service cloud inaccessible : "+e.message+". Vérifie l'URL, HTTPS et les règles CORS.");return null;}
 }
-$("engineCheck")?.addEventListener("click",checkLocalEngine);
-async function downloadEngineResults(jobId){
-  try{
-    const response=await fetch(engineUrl()+"/api/jobs/"+encodeURIComponent(jobId)+"/download",{headers:engineHeaders()});
-    if(!response.ok){const data=await response.json().catch(()=>({}));throw new Error(data.detail||("HTTP "+response.status));}
-    const blob=await response.blob(), url=URL.createObjectURL(blob), a=document.createElement("a");
-    a.href=url;a.download="AeroLab-CFD-"+jobId+".zip";document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);
-  }catch(err){engineMessage("Téléchargement impossible : "+err.message);}
+$("cloudCheck")?.addEventListener("click",checkCloud);
+async function cloudDownload(id){
+ try{const r=await fetch(cloudUrl()+"/api/jobs/"+encodeURIComponent(id)+"/download");if(!r.ok){const d=await r.json().catch(()=>({}));throw new Error(d.detail||("HTTP "+r.status));}const blob=await r.blob(),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download="AeroLab-CFD-"+id+".zip";document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+ catch(e){cloudMessage("Téléchargement impossible : "+e.message);}
 }
-function openEngineLog(jobId){
-  fetch(engineUrl()+"/api/jobs/"+encodeURIComponent(jobId)+"/log",{headers:engineHeaders()}).then(r=>{if(!r.ok)throw new Error("Journal indisponible");return r.blob();}).then(blob=>{const url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download="AeroLab-CFD-"+jobId+".log";a.click();URL.revokeObjectURL(url);}).catch(err=>engineMessage(err.message));
+async function cloudLog(id){
+ try{const r=await fetch(cloudUrl()+"/api/jobs/"+encodeURIComponent(id)+"/log");if(!r.ok)throw new Error("Journal indisponible");const blob=await r.blob(),url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download="AeroLab-CFD-"+id+".log";a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+ catch(e){cloudMessage(e.message);}
 }
-async function pollEngineJob(jobId){
-  stopEnginePolling();
-  try{
-    const response=await fetch(engineUrl()+"/api/jobs/"+encodeURIComponent(jobId),{headers:engineHeaders(),cache:"no-store"});
-    const data=await response.json().catch(()=>({}));
-    if(!response.ok)throw new Error(data.detail||("HTTP "+response.status));
-    const progress=Math.max(0,Math.min(100,Number(data.progress)||0));
-    const progressEl=$("engineProgress");if(progressEl){progressEl.hidden=false;progressEl.value=progress;}
-    const download=$("engineDownload");if(download){download.hidden=data.status!=="completed";download.onclick=()=>downloadEngineResults(jobId);}
-    const logBtn=$("engineLog");if(logBtn){logBtn.hidden=!["failed","running","meshing","preparing"].includes(data.status);logBtn.onclick=()=>openEngineLog(jobId);}
-    const line=(data.log_tail||data.error_tail||"").trim().split(/\r?\n/).slice(-2).join(" · ");
-    engineMessage((data.message||data.status)+" — "+progress+"%"+(line?"\n"+line:""),data.status==="completed");
-    if(data.status==="completed"){activeEngineJob=null;engineMessage("Calcul terminé. Télécharge l'archive ZIP puis ouvre les fichiers VTK dans ParaView pour explorer le champ d'écoulement.",true);return;}
-    if(data.status==="failed"){activeEngineJob=null;engineMessage("Calcul échoué : "+(data.message||"erreur OpenFOAM")+(line?"\n"+line:""));return;}
-    enginePollHandle=setTimeout(()=>pollEngineJob(jobId),2500);
-  }catch(err){engineMessage("Suivi interrompu : "+err.message+". Le calcul peut continuer sur le PC. Clique sur « Suivre un calcul » pour reprendre.");}
+async function pollCloud(id){
+ if(cloudPollHandle)clearTimeout(cloudPollHandle);
+ try{const r=await fetch(cloudUrl()+"/api/jobs/"+encodeURIComponent(id),{cache:"no-store"}),d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.detail||("HTTP "+r.status));
+ const p=Math.max(0,Math.min(100,Number(d.progress)||0)),bar=$("cloudProgress");if(bar){bar.hidden=false;bar.value=p;}
+ const dl=$("cloudDownload");if(dl){dl.hidden=d.status!=="completed";dl.onclick=()=>cloudDownload(id);}
+ const log=$("cloudLog");if(log){log.hidden=!["failed","running","meshing","preparing"].includes(d.status);log.onclick=()=>cloudLog(id);}
+ cloudMessage((d.message||d.status)+" — "+p+"%"+(d.status==="completed"?" · Calcul terminé côté serveur. Vérifie la convergence avant toute conclusion.":""));
+ if(d.status==="completed"||d.status==="failed")return;cloudPollHandle=setTimeout(()=>pollCloud(id),3000);
+ }catch(e){cloudMessage("Suivi interrompu : "+e.message+". Vérifie que le service cloud est accessible.");}
 }
-$("engineResume")?.addEventListener("click",()=>{const id=$("engineJobId")?.value.trim();if(!id){engineMessage("Aucun identifiant de calcul à suivre.");return;}activeEngineJob=id;pollEngineJob(id);});
-$("engineSubmit")?.addEventListener("click",async()=>{
-  const file=$("engineGeometry")?.files?.[0],speed=Number($("engineSpeed")?.value);
-  if(!file){engineMessage("Choisis d'abord un fichier STL ou OBJ.");return;}
-  if(!Number.isFinite(speed)||speed<=0||speed>300){engineMessage("La vitesse doit être comprise entre 0 et 300 km/h.");return;}
-  if(!/\.(stl|obj)$/i.test(file.name)){engineMessage("Format non pris en charge : utilise STL ou OBJ.");return;}
-  const health=await checkLocalEngine();
-  if(!health||!health.openfoam_available){engineMessage("Le moteur n'est pas prêt. Installe et configure OpenFOAM/WSL avant de lancer le calcul.");return;}
-  const form=new FormData();form.append("geometry",file);form.append("speed_kmh",String(speed));
-  const button=$("engineSubmit");if(button)button.disabled=true;
-  engineMessage("Envoi du modèle et démarrage du maillage automatique…");
-  try{
-    const response=await fetch(engineUrl()+"/api/jobs",{method:"POST",headers:engineHeaders(),body:form});
-    const data=await response.json().catch(()=>({}));
-    if(!response.ok)throw new Error(data.detail||("HTTP "+response.status));
-    activeEngineJob=data.id;if($("engineJobId"))$("engineJobId").value=data.id;
-    engineMessage("Calcul lancé. AeroLab prépare le maillage puis résout l'écoulement d'air.",true);
-    pollEngineJob(data.id);
-  }catch(err){engineMessage("Lancement impossible : "+err.message);}
-  finally{if(button)button.disabled=false;}
+$("cloudResume")?.addEventListener("click",()=>{const id=$("cloudJobId")?.value.trim();if(!id){cloudMessage("Saisis l'identifiant de calcul fourni par le serveur.");return;}pollCloud(id);});
+$("cloudSubmit")?.addEventListener("click",async()=>{
+ const base=cloudUrl(),file=$("modelInput")?.files?.[0],speed=Number($("cloudSpeed")?.value);
+ if(!base){cloudMessage("Aucun moteur cloud n'est configuré. L'aperçu approximatif fonctionne, mais une vraie CFD exige un serveur distant.");return;}
+ if(!file||!/\.(stl|obj)$/i.test(file.name)){cloudMessage("Charge d'abord un modèle STL ou OBJ dans Géométrie 3D.");return;}
+ if(!Number.isFinite(speed)||speed<=0||speed>300){cloudMessage("La vitesse doit être comprise entre 1 et 300 km/h.");return;}
+ const health=await checkCloud();if(!health)return;
+ const form=new FormData();form.append("geometry",file,file.name);form.append("speed_kmh",String(speed));const btn=$("cloudSubmit");if(btn)btn.disabled=true;cloudMessage("Envoi du modèle au serveur distant…");
+ try{const r=await fetch(base+"/api/jobs",{method:"POST",body:form}),d=await r.json().catch(()=>({}));if(!r.ok)throw new Error(d.detail||("HTTP "+r.status));if(!d.id)throw new Error("Le service n'a pas renvoyé d'identifiant de calcul.");$("cloudJobId").value=d.id;cloudMessage("Modèle envoyé. Le serveur a accepté le travail ; suivi du calcul…",true);pollCloud(d.id);}
+ catch(e){cloudMessage("Lancement cloud impossible : "+e.message+". Le serveur doit autoriser CORS et accepter multipart/form-data.");}
+ finally{if(btn)btn.disabled=false;}
 });
 const TUTORIAL_SEEN_KEY = "aerolab-cfd-tutorial-seen-v1";
 function showTutorial(){const overlay=$("tutorialOverlay");if(overlay){overlay.hidden=false;document.body.classList.add("tutorial-open");$("tutorialClose")?.focus();}}
