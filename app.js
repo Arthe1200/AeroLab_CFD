@@ -102,9 +102,14 @@ function parseCsv(text) {
   const parsed = lines.slice(1).map(line=>{ const row=parseLine(line); const num = keys => {const raw=get(row,keys);if(raw==="")return null;const n=Number(raw.replace(",","."));return Number.isFinite(n)?n:null;};
     return {variant:get(row,["variant","version","model","modele","nom"]) || "Variante sans nom",cd:num(["cd","cx","drag_coefficient","coefficient_de_trainee"]),drag_N:num(["drag_n","drag","drag_force_n","force_trainee_n"]),lift_N:num(["lift_n","lift","lift_force_n","portance_n"]),speed_kmh:num(["speed_kmh","speed","vitesse_kmh"]) ?? Number($("speed").value),source:get(row,["source","solver","origine"]) || "Non précisée",status:get(row,["status","statut","type"]) || "Non qualifiée"};
   }).filter(r=>r.cd!==null||r.drag_N!==null||r.lift_N!==null);
+  if (!parsed.length) throw new Error("Aucune ligne exploitable : vérifiez les en-têtes Cd, drag_N, lift_N ou le contenu du fichier.");
+  const invalid = parsed.find(r => (r.cd !== null && r.cd < 0) || (r.drag_N !== null && r.drag_N < 0) || (r.speed_kmh !== null && r.speed_kmh < 0));
+  if (invalid) throw new Error("Valeur négative détectée pour Cd, la traînée ou la vitesse. Vérifiez les unités et les données.");
+  return parsed;
 }
 $("csvInput").addEventListener("change", async e => { const file=e.target.files[0];if(!file)return;try{state.rows=parseCsv(await file.text());renderData();$("csvMessage").textContent=`${state.rows.length} ligne(s) importée(s) depuis ${file.name}. Vérifiez source, unités et statut.`;}catch(err){$("csvMessage").textContent="Erreur CSV : "+err.message;}});
 function renderData() {
+  saveRowsLocally();
   const validCd=state.rows.find(r=>r.cd!==null), validDrag=state.rows.find(r=>r.drag_N!==null);
   $("metricCd").textContent=validCd?validCd.cd.toFixed(3):"—"; $("cdFoot").textContent=validCd?`${validCd.variant} · ${validCd.source} (${validCd.status})`:"Aucune donnée importée";
   $("metricDrag").textContent=validDrag?`${validDrag.drag_N.toFixed(1)} N`:"—"; $("metricVersions").textContent=String(state.rows.length);
