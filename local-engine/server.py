@@ -26,7 +26,7 @@ def record(d):
 def detect_openfoam():
  wsl=shutil.which("wsl.exe") or shutil.which("wsl")
  if not wsl: return {"available":False,"message":"WSL n'est pas détecté. Installe WSL et OpenFOAM."}
- script=r'for f in /opt/openfoam*/etc/bashrc /usr/lib/openfoam/openfoam*/etc/bashrc /usr/share/openfoam/etc/bashrc; do [ ! -f "$f" ] || . "$f"; done; command -v blockMesh && command -v snappyHexMesh && command -v simpleFoam'
+ script=r'for f in /opt/openfoam*/etc/bashrc /usr/lib/openfoam/openfoam*/etc/bashrc /usr/share/openfoam/etc/bashrc; do if [ -f "$f" ]; then . "$f"; break; fi; done; command -v blockMesh && command -v snappyHexMesh && command -v simpleFoam'
  try:
   r=subprocess.run([wsl,"bash","-lc",script],capture_output=True,text=True,timeout=8,check=False)
   ok=r.returncode==0 and all(x in r.stdout for x in ("blockMesh","snappyHexMesh","simpleFoam"))
