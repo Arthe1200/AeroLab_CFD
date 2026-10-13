@@ -5,6 +5,18 @@ import { OBJLoader } from "three/addons/loaders/OBJLoader.js";
 
 const $ = (id) => document.getElementById(id);
 const state = { rows: [], modelName: "", scene: null, camera: null, renderer: null, controls: null, model: null };
+const STORAGE_KEY = "aerolab-cfd-results-v1";
+function saveRowsLocally() {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state.rows)); }
+  catch (err) { console.warn("Impossible de sauvegarder les résultats localement.", err); }
+}
+function restoreRowsLocally() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+    if (Array.isArray(saved)) state.rows = saved.filter(r => r && typeof r === "object");
+  } catch (err) { console.warn("Les résultats sauvegardés sont illisibles.", err); }
+}
+restoreRowsLocally();
 
 function showView(id) {
   document.querySelectorAll(".view").forEach(v => v.classList.toggle("active", v.id === id));
@@ -87,7 +99,7 @@ function parseCsv(text) {
   if(lines.length<2) throw new Error("Le CSV doit contenir une ligne d'en-têtes et au moins une ligne de données.");
   const headers = parseLine(lines[0]).map(h => h.toLowerCase().trim().replace(/[\s-]+/g,"_"));
   const get = (row, keys) => {const i=headers.findIndex(h=>keys.includes(h));return i<0 ? "" : (row[i]??"");};
-  return lines.slice(1).map(line=>{ const row=parseLine(line); const num = keys => {const raw=get(row,keys);if(raw==="")return null;const n=Number(raw.replace(",","."));return Number.isFinite(n)?n:null;};
+  const parsed = lines.slice(1).map(line=>{ const row=parseLine(line); const num = keys => {const raw=get(row,keys);if(raw==="")return null;const n=Number(raw.replace(",","."));return Number.isFinite(n)?n:null;};
     return {variant:get(row,["variant","version","model","modele","nom"]) || "Variante sans nom",cd:num(["cd","cx","drag_coefficient","coefficient_de_trainee"]),drag_N:num(["drag_n","drag","drag_force_n","force_trainee_n"]),lift_N:num(["lift_n","lift","lift_force_n","portance_n"]),speed_kmh:num(["speed_kmh","speed","vitesse_kmh"]) ?? Number($("speed").value),source:get(row,["source","solver","origine"]) || "Non précisée",status:get(row,["status","statut","type"]) || "Non qualifiée"};
   }).filter(r=>r.cd!==null||r.drag_N!==null||r.lift_N!==null);
 }
@@ -132,5 +144,5 @@ $("exportReport").addEventListener("click",()=>{
   if(!state.rows.length){alert("Aucun résultat à exporter. Importez d'abord un CSV.");return;} downloadText("aerolab-resultats-export.csv",csv);
 });
 function csvEscape(v){const s=String(v);return /[",;\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s;}
-function downloadText(name,text){const blob=new Blob([text],{type:"text/csv;charset=utf-8;"}),a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=name;a.click();URL.revokeObjectURL(a.href);}
+function downloadText(name,text){const blob=new Blob(["\\uFEFF",text],{type:"text/csv;charset=utf-8;"}),a=document.createElement("a"),url=URL.createObjectURL(blob);a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 initViewer();renderData();
