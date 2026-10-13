@@ -6,6 +6,8 @@ if not exist ".venv\Scripts\python.exe" (
   py -3 -m venv .venv || goto :error
   ".venv\Scripts\python.exe" -m pip install --upgrade pip || goto :error
   ".venv\Scripts\python.exe" -m pip install -r requirements.txt || goto :error
+) else (
+  ".venv\Scripts\python.exe" -m pip install -r requirements.txt || goto :error
 )
 ".venv\Scripts\python.exe" server.py
 goto :eof
