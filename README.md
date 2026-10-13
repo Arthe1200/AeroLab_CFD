@@ -108,7 +108,7 @@ Le site GitHub Pages ne peut pas installer de logiciel ni exécuter un solveur s
 4. Lancer `start-windows.bat`. Copier le code d'accès affiché dans la console.
 5. Dans AeroLab CFD → Configuration CFD, saisir le code puis cliquer sur **Tester la connexion**.
 
-Le pont fournit un état de santé, vérifie la présence d'OpenFOAM via WSL et reçoit des fichiers dans le dossier local `jobs`. **La réception d'un fichier n'est pas une simulation** : ce pont ne prétend pas encore générer un maillage valide ou calculer un Cd. La génération de cas OpenFOAM complète dépend de la version installée, de la qualité de la géométrie et du choix de maillage. Le format STEP/IGES n'est pas accepté par le pont : convertir d'abord en STL avec FreeCAD.
+Le moteur local peut créer un cas OpenFOAM initial, générer un maillage et lancer le solveur. Ce workflow est un prototype et dépend de la compatibilité de la géométrie et de l'installation OpenFOAM. Le format STEP/IGES doit être converti en STL avec FreeCAD.
 
 
 ## Simulation automatique (prototype)
