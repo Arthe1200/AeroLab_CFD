@@ -212,40 +212,72 @@ function csvEscape(v){const s=String(v);return /[",;\n]/.test(s)?'"'+s.replace(/
 function downloadText(name,text){const blob=new Blob(["\\uFEFF",text],{type:"text/csv;charset=utf-8;"}),a=document.createElement("a"),url=URL.createObjectURL(blob);a.href=url;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);}
 
 const engineDefaults = { url: "http://127.0.0.1:8765" };
-function engineUrl(){ return ($("engineUrl")?.value || engineDefaults.url).trim().replace(/\/$/, ""); }
-function engineHeaders(){ const token=$("engineToken")?.value.trim(); return token ? {"Authorization": "Bearer "+token} : {}; }
+function engineUrl(){ return ($("engineUrl")?.value.trim() || "http://127.0.0.1:8765").replace(/\/+$/,""); }
+function engineHeaders(){ const token=$("engineToken")?.value.trim(); return token ? {"Authorization":"Bearer "+token} : {}; }
 function engineMessage(message, good=false){ const el=$("engineStatus"); if(el) el.textContent=message; const badge=$("engineBadge"); if(badge){badge.textContent=good?"Connecté":"À vérifier";badge.className="pill "+(good?"green":"amber");} }
+let activeEngineJob = null;
+let enginePollHandle = null;
+function stopEnginePolling(){if(enginePollHandle){clearTimeout(enginePollHandle);enginePollHandle=null;}}
 async function checkLocalEngine(){
-  const url=engineUrl();
   try{
-    const response=await fetch(url+"/api/health",{headers:engineHeaders(),cache:"no-store"});
+    const response=await fetch(engineUrl()+"/api/health",{headers:engineHeaders(),cache:"no-store"});
     const data=await response.json().catch(()=>({}));
     if(!response.ok) throw new Error(data.detail||("HTTP "+response.status));
-    engineMessage("Service Windows joignable. "+(data.openfoam_available?"OpenFOAM détecté.":"OpenFOAM non détecté.")+" "+(data.message||""),true);
+    const foam=data.openfoam||{};
+    engineMessage(data.openfoam_available?"Moteur prêt. "+(foam.message||"OpenFOAM détecté."):"Service connecté, mais solveur indisponible : "+(foam.message||data.message||"OpenFOAM absent."),!!data.openfoam_available);
     return data;
-  }catch(err){
-    engineMessage("Connexion impossible : "+err.message+". Vérifie que le service tourne, que l'adresse est correcte et que le code d'accès est valide.");
-    return null;
-  }
+  }catch(err){engineMessage("Connexion impossible : "+err.message+". Démarre start-windows.bat et vérifie le code d'accès.");return null;}
 }
 $("engineCheck")?.addEventListener("click",checkLocalEngine);
+async function downloadEngineResults(jobId){
+  try{
+    const response=await fetch(engineUrl()+"/api/jobs/"+encodeURIComponent(jobId)+"/download",{headers:engineHeaders()});
+    if(!response.ok){const data=await response.json().catch(()=>({}));throw new Error(data.detail||("HTTP "+response.status));}
+    const blob=await response.blob(), url=URL.createObjectURL(blob), a=document.createElement("a");
+    a.href=url;a.download="AeroLab-CFD-"+jobId+".zip";document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(url);
+  }catch(err){engineMessage("Téléchargement impossible : "+err.message);}
+}
+function openEngineLog(jobId){
+  fetch(engineUrl()+"/api/jobs/"+encodeURIComponent(jobId)+"/log",{headers:engineHeaders()}).then(r=>{if(!r.ok)throw new Error("Journal indisponible");return r.blob();}).then(blob=>{const url=URL.createObjectURL(blob),a=document.createElement("a");a.href=url;a.download="AeroLab-CFD-"+jobId+".log";a.click();URL.revokeObjectURL(url);}).catch(err=>engineMessage(err.message));
+}
+async function pollEngineJob(jobId){
+  stopEnginePolling();
+  try{
+    const response=await fetch(engineUrl()+"/api/jobs/"+encodeURIComponent(jobId),{headers:engineHeaders(),cache:"no-store"});
+    const data=await response.json().catch(()=>({}));
+    if(!response.ok)throw new Error(data.detail||("HTTP "+response.status));
+    const progress=Math.max(0,Math.min(100,Number(data.progress)||0));
+    const progressEl=$("engineProgress");if(progressEl){progressEl.hidden=false;progressEl.value=progress;}
+    const download=$("engineDownload");if(download){download.hidden=data.status!=="completed";download.onclick=()=>downloadEngineResults(jobId);}
+    const logBtn=$("engineLog");if(logBtn){logBtn.hidden=!["failed","running","meshing","preparing"].includes(data.status);logBtn.onclick=()=>openEngineLog(jobId);}
+    const line=(data.log_tail||data.error_tail||"").trim().split(/\r?\n/).slice(-2).join(" · ");
+    engineMessage((data.message||data.status)+" — "+progress+"%"+(line?"\n"+line:""),data.status==="completed");
+    if(data.status==="completed"){activeEngineJob=null;engineMessage("Calcul terminé. Télécharge l'archive ZIP puis ouvre les fichiers VTK dans ParaView pour explorer le champ d'écoulement.",true);return;}
+    if(data.status==="failed"){activeEngineJob=null;engineMessage("Calcul échoué : "+(data.message||"erreur OpenFOAM")+(line?"\n"+line:""));return;}
+    enginePollHandle=setTimeout(()=>pollEngineJob(jobId),2500);
+  }catch(err){engineMessage("Suivi interrompu : "+err.message+". Le calcul peut continuer sur le PC. Clique sur « Suivre un calcul » pour reprendre.");}
+}
+$("engineResume")?.addEventListener("click",()=>{const id=$("engineJobId")?.value.trim();if(!id){engineMessage("Aucun identifiant de calcul à suivre.");return;}activeEngineJob=id;pollEngineJob(id);});
 $("engineSubmit")?.addEventListener("click",async()=>{
-  const file=$("engineGeometry")?.files?.[0];
-  const speed=Number($("engineSpeed")?.value);
+  const file=$("engineGeometry")?.files?.[0],speed=Number($("engineSpeed")?.value);
   if(!file){engineMessage("Choisis d'abord un fichier STL ou OBJ.");return;}
   if(!Number.isFinite(speed)||speed<=0||speed>300){engineMessage("La vitesse doit être comprise entre 0 et 300 km/h.");return;}
-  if(!/\.(stl|obj)$/i.test(file.name)){engineMessage("Format non pris en charge pour l'instant : utilise un fichier STL ou OBJ.");return;}
+  if(!/\.(stl|obj)$/i.test(file.name)){engineMessage("Format non pris en charge : utilise STL ou OBJ.");return;}
+  const health=await checkLocalEngine();
+  if(!health||!health.openfoam_available){engineMessage("Le moteur n'est pas prêt. Installe et configure OpenFOAM/WSL avant de lancer le calcul.");return;}
   const form=new FormData();form.append("geometry",file);form.append("speed_kmh",String(speed));
-  engineMessage("Envoi du modèle au service local…");
+  const button=$("engineSubmit");if(button)button.disabled=true;
+  engineMessage("Envoi du modèle et démarrage du maillage automatique…");
   try{
     const response=await fetch(engineUrl()+"/api/jobs",{method:"POST",headers:engineHeaders(),body:form});
     const data=await response.json().catch(()=>({}));
-    if(!response.ok) throw new Error(data.detail||("HTTP "+response.status));
-    engineMessage(data.message||"Modèle reçu par le service local.",true);
-  }catch(err){engineMessage("Envoi impossible : "+err.message+". Le service peut être arrêté ou le solveur non configuré.");}
+    if(!response.ok)throw new Error(data.detail||("HTTP "+response.status));
+    activeEngineJob=data.id;if($("engineJobId"))$("engineJobId").value=data.id;
+    engineMessage("Calcul lancé. AeroLab prépare le maillage puis résout l'écoulement d'air.",true);
+    pollEngineJob(data.id);
+  }catch(err){engineMessage("Lancement impossible : "+err.message);}
+  finally{if(button)button.disabled=false;}
 });
-
-
 const TUTORIAL_SEEN_KEY = "aerolab-cfd-tutorial-seen-v1";
 function showTutorial(){const overlay=$("tutorialOverlay");if(overlay){overlay.hidden=false;document.body.classList.add("tutorial-open");$("tutorialClose")?.focus();}}
 function hideTutorial(){const overlay=$("tutorialOverlay");if(overlay)overlay.hidden=true;document.body.classList.remove("tutorial-open");if($("tutorialDontShow")?.checked){try{localStorage.setItem(TUTORIAL_SEEN_KEY,"1");}catch{}}}
