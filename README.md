@@ -116,3 +116,16 @@ Le moteur local peut créer un cas OpenFOAM initial, générer un maillage et la
 Le moteur local tente de créer un cas OpenFOAM à partir d'un fichier STL/OBJ, puis lance blockMesh, snappyHexMesh, checkMesh et simpleFoam. Il tente ensuite d'exporter les champs en VTK ASCII. Il faut une distribution WSL où les commandes OpenFOAM sont accessibles après chargement de son fichier bashrc. Le démarrage installe aussi trimesh pour lire et normaliser la géométrie.
 
 Le modèle est mis à l'échelle avec sa plus grande dimension fixée à 4,5 m et l'axe le plus long est interprété comme axe longitudinal X. Ce sont des hypothèses automatiques, pas une validation du modèle. Le maillage initial est grossier et sans couches limites : les résultats ne sont pas validés pour la conception automobile. Les fichiers VTK exportés peuvent être explorés dans ParaView. La visualisation interactive des streamlines directement dans la page reste à développer.
+
+
+## Mode sans installation locale
+
+L'interface comprend un **aperçu d'écoulement illustratif** animé dans le navigateur après import d'un STL/OBJ. Les trajectoires sont générées graphiquement autour de l'enveloppe du modèle ; elles ne proviennent pas de la résolution des équations de Navier–Stokes et ne permettent pas de mesurer le Cd. Elles portent donc toujours le libellé « Flux approximatif ».
+
+### Connecteur pour un véritable moteur CFD cloud
+
+La section Configuration CFD accepte l'URL d'un serveur distant qui implémente l'API AeroLab (GET /api/health, POST /api/jobs avec les champs multipart geometry et speed_kmh, GET /api/jobs/{id}, puis les routes de téléchargement des résultats et du journal). Le site surveille le travail et permet de télécharger les résultats renvoyés.
+
+**Aucun serveur CFD cloud n'est actuellement hébergé ou configuré dans ce dépôt.** GitHub Pages est uniquement un hébergeur statique : le connecteur ne peut pas lancer un vrai calcul tant que l'API distante n'a pas été déployée sur une infrastructure disposant d'OpenFOAM, de mémoire et de temps CPU suffisants. L'API doit être servie en HTTPS, limiter les téléversements et l'utilisation, contrôler les fichiers, et autoriser explicitement l'origine https://arthe1200.github.io en CORS. Ne place pas de clé privée de service dans le JavaScript public.
+
+L'aperçu dans le navigateur et une simulation CFD réelle sont donc distingués dans l'interface. Un résultat ne doit être qualifié de CFD que si le serveur a réellement terminé le solveur et renvoyé les données calculées.
